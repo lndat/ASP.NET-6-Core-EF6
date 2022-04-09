@@ -7,6 +7,9 @@ using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 namespace csm6.Controllers
 {
@@ -49,13 +52,13 @@ namespace csm6.Controllers
         }
 
         [HttpPost("login")]
-        public ActionResult Login(string password, string email)
+        public async Task<IActionResult> Login(string password, string email)
         {
             if (!AccountServices.CanLogin(password, email))
                 return BadRequest("wrong logindata");
 
-            string token = CreateToken(email);
-            return Ok(token);
+            await CreateCookie(email);
+            return RedirectToAction("Index", "Home");
         }
 
         [HttpGet("login")]
@@ -64,28 +67,30 @@ namespace csm6.Controllers
             return View();
         }
 
-        [NonAction]
-        private string CreateToken(string email)
+        [HttpGet("logout")]
+        public async Task<IActionResult> Logout()
         {
-            List<Claim> claims = new List<Claim>
+            await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+            return RedirectToAction("Index", "Home");
+        }
+
+        [NonAction]
+        public async Task CreateCookie(string email)
+        {
+            var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.Email, email)
+            new Claim(ClaimTypes.Email, email),
+            new Claim(ClaimTypes.Role, "User"),
+            new Claim(ClaimTypes.Role, "Admin"),
             };
 
-            var key = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(
-                configuration.GetSection("AppSettings:Token").Value));
+            var claimsIdentity = new ClaimsIdentity(
+                claims, CookieAuthenticationDefaults.AuthenticationScheme);
 
-            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
 
-            var token = new JwtSecurityToken(
-                claims: claims,
-                expires: DateTime.Now.AddDays(1),
-                signingCredentials: creds
-                );
-
-            var jwt = new JwtSecurityTokenHandler().WriteToken(token);
-
-            return jwt;
+            await HttpContext.SignInAsync(
+                CookieAuthenticationDefaults.AuthenticationScheme,
+                new ClaimsPrincipal(claimsIdentity));
         }
     }
 }
